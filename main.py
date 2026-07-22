@@ -1,7 +1,8 @@
 from fastapi import FastAPI
+from .Models import models
 
 app = FastAPI()
 
 @app.get("/")
-def read_root():
-    return {"Hello" :"World"}
+def home():
+    return {"message" :"Hello World"}
