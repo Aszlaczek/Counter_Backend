@@ -12,7 +12,7 @@ from typing import Optional
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
-from jose import jwt, JWTError
+from jose import jwt
 
 from config import get_settings
 from Models.models import AdminUser
@@ -29,12 +29,26 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # =============================================================================
 
 def hash_password(password: str) -> str:
-    """Hash a plain-text password using bcrypt."""
+    """
+    Hash a plain-text password using bcrypt.
+
+    Note: bcrypt has a 72-byte limit. Passwords longer than 72 bytes are
+    automatically truncated to 72 bytes to avoid ValueError.
+    """
+    # Truncate to 72 bytes to avoid bcrypt's limit
+    password_bytes = password.encode("utf-8")[:72]
+    password = password_bytes.decode("utf-8", errors="ignore")
     return pwd_context.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a plain-text password against a bcrypt hash."""
+    """
+    Verify a plain-text password against a bcrypt hash.
+
+    Truncates long passwords to 72 bytes to match the hashing behavior.
+    """
+    password_bytes = plain_password.encode("utf-8")[:72]
+    plain_password = password_bytes.decode("utf-8", errors="ignore")
     return pwd_context.verify(plain_password, hashed_password)
 
 
@@ -52,6 +66,9 @@ def create_access_token(admin_id: int, expires_delta: Optional[int] = None) -> s
 
     Returns:
         Encoded JWT string
+
+    Note:
+        python-jose requires the 'sub' claim to be a string.
     """
     if expires_delta is None:
         expires_delta = settings.jwt_access_token_expire_minutes
@@ -59,7 +76,7 @@ def create_access_token(admin_id: int, expires_delta: Optional[int] = None) -> s
     expire = dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=expires_delta)
 
     payload = {
-        "sub": admin_id,
+        "sub": str(admin_id),  # python-jose requires sub to be a string
         "exp": expire,
         "iat": dt.datetime.now(dt.timezone.utc),
         "type": "access",
@@ -181,4 +198,3 @@ def get_admin_response(admin: AdminUser) -> AdminUserResponse:
         is_active=admin.is_active,
         created_at=admin.created_at,
     )
-

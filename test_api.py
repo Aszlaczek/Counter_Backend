@@ -2,27 +2,34 @@
 Comprehensive API test script.
 Run: python test_api.py
 """
+import os
+import sys
 from fastapi.testclient import TestClient
 from main import app
+from database import init_db
+
+# Initialize database tables before running tests
+init_db()
 
 client = TestClient(app)
 passed = 0
 failed = 0
 
+
 def test(name, condition, detail=""):
     global passed, failed
     if condition:
         passed += 1
-        print(f"  ✅ {name}")
+        print(f"  \u2705 {name}")
     else:
         failed += 1
-        print(f"  ❌ {name} - {detail}")
+        print(f"  \u274c {name} - {detail}")
 
 
 # =============================================================================
 # 1. Health Check
 # =============================================================================
-print("\n🏥 Health Check")
+print("\n\U0001f3e5 Health Check")
 r = client.get("/")
 test("Root endpoint", r.status_code == 200)
 test("Response has app name", "Extra Hours Management API" in r.json().get("app", ""))
@@ -31,7 +38,7 @@ test("Status is running", r.json().get("status") == "running")
 # =============================================================================
 # 2. Authentication - Register
 # =============================================================================
-print("\n🔐 Authentication")
+print("\n\U0001f510 Authentication")
 
 r = client.post("/api/auth/register", json={
     "name": "Test",
@@ -90,7 +97,7 @@ test("Get me invalid token - status 401", r.status_code == 401 or r.status_code 
 # =============================================================================
 # 5. Persons - CRUD
 # =============================================================================
-print("\n👤 Persons CRUD")
+print("\n\U0001f464 Persons CRUD")
 
 # Create person
 r = client.post("/api/persons/", json={
@@ -136,7 +143,7 @@ test("Update person faculty changed", r.json().get("faculty") == "Computer Scien
 # =============================================================================
 # 6. Extra Hours - CRUD
 # =============================================================================
-print("\n⏰ Extra Hours CRUD")
+print("\n\u23f0 Extra Hours CRUD")
 
 # Create extra hours
 r = client.post("/api/extra-hours/", json={
@@ -205,10 +212,9 @@ test("Verify person deleted - status 404", r.status_code == 404)
 # Summary
 # =============================================================================
 print(f"\n{'='*50}")
-print(f"📊 TEST RESULTS: {passed} passed, {failed} failed out of {passed + failed} total")
+print(f"\U0001f4ca TEST RESULTS: {passed} passed, {failed} failed out of {passed + failed} total")
 if failed == 0:
-    print("🎉 ALL TESTS PASSED!")
+    print("\U0001f389 ALL TESTS PASSED!")
 else:
-    print(f"⚠️  {failed} test(s) FAILED!")
+    print(f"\u26a0\ufe0f  {failed} test(s) FAILED!")
 print(f"{'='*50}")
-

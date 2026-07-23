@@ -29,10 +29,10 @@ def get_current_admin(
 ) -> AdminUser:
     """
     Dependency that validates the JWT token and returns the authenticated admin user.
-    
+
     This is used to protect endpoints that require authentication.
     Every protected action (create/update/delete) must use this dependency.
-    
+
     Raises:
         HTTPException 401: If token is missing, invalid, or expired
         HTTPException 403: If admin user is inactive/deactivated
@@ -53,13 +53,16 @@ def get_current_admin(
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm],
         )
-        admin_id: int = payload.get("sub")
+        # python-jose encodes 'sub' as a string, convert to int for DB lookup
+        admin_id_str: str = payload.get("sub")
 
-        if admin_id is None:
+        if admin_id_str is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token: no subject found",
             )
+
+        admin_id = int(admin_id_str)
 
     except JWTError:
         raise HTTPException(
@@ -83,4 +86,3 @@ def get_current_admin(
         )
 
     return admin
-

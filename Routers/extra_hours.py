@@ -9,7 +9,7 @@ Endpoints:
 - GET  /api/extra-hours/{id}     - Get a specific record
 - PUT  /api/extra-hours/{id}     - Update a record
 - DELETE /api/extra-hours/{id}   - Delete a record
-- GET  /api/persons/{person_id}/hours - Get hours summary for a person
+- GET  /api/extra-hours/persons/{person_id}/summary - Person hours summary
 """
 from typing import List, Optional
 
@@ -165,7 +165,6 @@ def delete_extra_hours_record(
     return None
 
 
-# Additional endpoint: Get person hours summary via extra-hours router for convenience
 @router.get(
     "/persons/{person_id}/summary",
     response_model=dict,
@@ -188,4 +187,3 @@ def get_person_hours_summary(
     Requires admin authentication.
     """
     return get_person_total_hours(db, person_id, current_admin)
-

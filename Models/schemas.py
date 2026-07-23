@@ -16,7 +16,12 @@ class AdminUserCreate(BaseModel):
     surname: str = Field(..., min_length=1, max_length=100, description="Last name")
     username: str = Field(..., min_length=3, max_length=100, description="Unique username")
     email: Optional[EmailStr] = Field(None, description="Optional email address")
-    password: str = Field(..., min_length=6, max_length=255, description="Password (min 6 chars)")
+    password: str = Field(
+        ...,
+        min_length=6,
+        max_length=72,
+        description="Password (6-72 characters — bcrypt has a 72-byte limit)",
+    )
 
 
 class AdminUserLogin(BaseModel):
