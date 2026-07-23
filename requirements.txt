@@ -1,0 +1,21 @@
+# FastAPI & Server
+fastapi==0.139.2
+uvicorn==0.51.0
+python-multipart==0.0.32
+
+# Database
+sqlalchemy>=2.0.0
+
+# Authentication
+passlib[bcrypt]>=1.7.4
+python-jose[cryptography]>=3.3.0
+bcrypt>=4.0.0
+
+# Validation
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+email-validator>=2.0.0
+
+# Development
+# python-dotenv (optional, for .env file support)
+
