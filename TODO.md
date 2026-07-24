@@ -16,7 +16,7 @@
 
 ## Phase 3: API Endpoints (Routers)
 
-- [x] 9. Create `Routers/auth.py` — /api/auth/register, /login, /me
+- [x] 9. Create `Routers/auth.py` — /api/auth/register, /login, /refresh, /me
 - [x] 10. Create `Routers/persons.py` — /api/persons CRUD
 - [x] 11. Create `Routers/extra_hours.py` — /api/extra-hours CRUD
 
@@ -26,35 +26,11 @@
 - [x] 13. Update `requirements.txt` — Add new dependencies
 - [x] 14. Install dependencies & test the app
 
-## Phase 5: Verification
+## Phase 5: Refresh Token Feature
 
-- [x] 15. Create **init**.py files for packages
-- [x] 16. Run the server and verify endpoints via /docs
-- [x] 17. All 47 API tests PASSED
-
-## Project Structure
-
-```
-Counter_Backend/
-├── main.py                     # FastAPI app with startup event
-├── config.py                   # Settings (DB URL, JWT secret, etc.)
-├── database.py                 # SQLAlchemy engine + session + Base
-├── dependencies.py             # get_db(), get_current_admin()
-├── requirements.txt            # Project dependencies
-├── test_api.py                 # Comprehensive test suite (47 tests)
-├── TODO.md                     # This tracker
-├── Models/
-│   ├── __init__.py
-│   ├── models.py               # SQLAlchemy ORM models
-│   └── schemas.py              # Pydantic request/response schemas
-├── Routers/
-│   ├── __init__.py
-│   ├── auth.py                 # Auth endpoints
-│   ├── persons.py              # Person CRUD endpoints
-│   └── extra_hours.py          # Extra hours CRUD endpoints
-└── Services/
-    ├── __init__.py
-    ├── auth_service.py          # Auth business logic
-    ├── person_service.py        # Person business logic
-    └── extra_hours_service.py   # Extra hours business logic
-```
+- [x] 15. Add `jwt_refresh_token_expire_days` to config
+- [x] 16. Update TokenResponse schema with refresh_token field
+- [x] 17. Add `verify_refresh_token()` to auth_service
+- [x] 18. Wire refresh token into /login response
+- [x] 19. Rewrite /refresh endpoint to accept refresh token from body
+- [x] 20. Update tests with refresh token coverage

@@ -68,9 +68,13 @@ r = client.post("/api/auth/login", json={
 })
 test("Login - status 200", r.status_code == 200)
 test("Login returns access_token", "access_token" in r.json())
+test("Login returns refresh_token", "refresh_token" in r.json())
 test("Login returns token_type bearer", r.json().get("token_type") == "bearer")
 TOKEN = r.json()["access_token"]
-test("Token is not empty", len(TOKEN) > 20)
+REFRESH_TOKEN = r.json()["refresh_token"]
+test("Access token is not empty", len(TOKEN) > 20)
+test("Refresh token is not empty", len(REFRESH_TOKEN) > 20)
+test("Refresh token differs from access token", REFRESH_TOKEN != TOKEN)
 
 # Login with wrong password
 r = client.post("/api/auth/login", json={
@@ -80,7 +84,41 @@ r = client.post("/api/auth/login", json={
 test("Login wrong password - status 401", r.status_code == 401)
 
 # =============================================================================
-# 4. Authentication - Get Me
+# 4. Authentication - Refresh Token
+# =============================================================================
+print("\n\U0001f504 Token Refresh")
+
+# Refresh with valid refresh token
+r = client.post("/api/auth/refresh", json={
+    "refresh_token": REFRESH_TOKEN
+})
+test("Refresh token - status 200", r.status_code == 200)
+test("Refresh returns new access_token", "access_token" in r.json())
+test("Refresh returns new refresh_token", "refresh_token" in r.json())
+test("Refresh returns admin data", "admin" in r.json())
+NEW_ACCESS_TOKEN = r.json()["access_token"]
+NEW_REFRESH_TOKEN = r.json()["refresh_token"]
+test("New access token differs from old", NEW_ACCESS_TOKEN != TOKEN)
+test("New refresh token differs from old", NEW_REFRESH_TOKEN != REFRESH_TOKEN)
+
+# Refresh with invalid token string
+r = client.post("/api/auth/refresh", json={
+    "refresh_token": "invalid_token_here"
+})
+test("Refresh invalid token - status 401", r.status_code == 401)
+
+# Refresh with access token (should fail because token type is 'access', not 'refresh')
+r = client.post("/api/auth/refresh", json={
+    "refresh_token": TOKEN  # TOKEN is an access token, not a refresh token
+})
+test("Refresh using access token - status 401", r.status_code == 401)
+
+# Use new tokens for subsequent operations
+TOKEN = NEW_ACCESS_TOKEN
+REFRESH_TOKEN = NEW_REFRESH_TOKEN
+
+# =============================================================================
+# 5. Authentication - Get Me
 # =============================================================================
 r = client.get("/api/auth/me", headers={"Authorization": f"Bearer {TOKEN}"})
 test("Get me - status 200", r.status_code == 200)
@@ -95,7 +133,7 @@ r = client.get("/api/auth/me", headers={"Authorization": "Bearer invalid_token_h
 test("Get me invalid token - status 401", r.status_code == 401 or r.status_code == 403)
 
 # =============================================================================
-# 5. Persons - CRUD
+# 6. Persons - CRUD
 # =============================================================================
 print("\n\U0001f464 Persons CRUD")
 
@@ -141,7 +179,7 @@ test("Update person - status 200", r.status_code == 200)
 test("Update person faculty changed", r.json().get("faculty") == "Computer Science")
 
 # =============================================================================
-# 6. Extra Hours - CRUD
+# 7. Extra Hours - CRUD
 # =============================================================================
 print("\n\u23f0 Extra Hours CRUD")
 

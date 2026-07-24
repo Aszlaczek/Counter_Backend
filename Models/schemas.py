@@ -45,16 +45,22 @@ class AdminUserResponse(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    """Schema for JWT token response."""
+    """Schema for JWT token response.
+
+    Includes both access_token (short-lived, 60 min) and
+    refresh_token (long-lived, 30 days) for secure token renewal.
+    """
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     expires_in_minutes: int
+    refresh_token_expires_in_days: int = 30
     admin: AdminUserResponse
 
 
 class TokenRefreshRequest(BaseModel):
-    """Schema for refreshing a token."""
-    refresh_token: str
+    """Schema for refreshing a token using a refresh token."""
+    refresh_token: str = Field(..., description="The refresh token received during login")
 
 
 # =============================================================================
@@ -154,4 +160,3 @@ class ExtraHoursResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
