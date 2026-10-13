@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from Models.models import Person, AdminUser, ExtraHours
 from Models.schemas import PersonCreate, PersonUpdate, PersonResponse, PersonDetailResponse
@@ -64,7 +65,7 @@ def get_all_persons(
     if is_working is not None:
         query = query.filter(Person.is_working == is_working)
 
-    return query.offset(skip).limit(limit).all()
+    return query.order_by(Person.id).offset(skip).limit(limit).all()
 
 
 def get_person_by_id(db: Session, person_id: int, current_admin: AdminUser) -> Person:
@@ -176,12 +177,10 @@ def get_person_with_hours_summary(
     """
     person = get_person_by_id(db, person_id, current_admin)
 
-    # Calculate total extra hours
-    extra_hours_records = db.query(ExtraHours).filter(
-        ExtraHours.person_id == person_id
-    ).all()
-
-    total_hours = sum(record.hours + (record.minutes / 60.0) for record in extra_hours_records)
+    total_minutes, record_count = db.query(
+        func.coalesce(func.sum(ExtraHours.hours * 60 + ExtraHours.minutes), 0),
+        func.count(ExtraHours.id),
+    ).filter(ExtraHours.person_id == person_id).one()
 
     return PersonDetailResponse(
         id=person.id,
@@ -192,7 +191,7 @@ def get_person_with_hours_summary(
         created_by_id=person.created_by_id,
         created_at=person.created_at,
         updated_at=person.updated_at,
-        total_extra_hours=round(total_hours, 2),
-        extra_hours_count=len(extra_hours_records),
+        total_extra_hours=round(total_minutes / 60.0, 2),
+        extra_hours_count=record_count,
     )
 

@@ -111,7 +111,7 @@ def refresh(
     This endpoint allows you to obtain a new access token without re-entering
     your credentials. The refresh token itself is validated (signature, expiry, type).
 
-    Returns a new access token and a new refresh token (token rotation for security).
+    Returns new tokens. Previously issued refresh tokens remain valid until expiry.
     """
     # Verify the refresh token and extract admin ID
     admin_id = verify_refresh_token(refresh_data.refresh_token)
@@ -133,7 +133,7 @@ def refresh(
             detail="This account has been deactivated.",
         )
 
-    # Issue new tokens (rotation: old refresh token is invalidated by not reusing it)
+    # Issue new tokens; stateless JWTs do not revoke previously issued tokens.
     new_access_token = create_access_token(admin.id)
     new_refresh_token = create_refresh_token(admin.id)
 

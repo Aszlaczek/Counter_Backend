@@ -8,6 +8,7 @@ from typing import List, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from Models.models import ExtraHours, Person, AdminUser
 from Models.schemas import ExtraHoursCreate, ExtraHoursUpdate, ExtraHoursResponse
@@ -119,7 +120,7 @@ def get_all_extra_hours(
         query = query.filter(ExtraHours.person_id == person_id)
 
     # Order by date descending (most recent first)
-    query = query.order_by(ExtraHours.date.desc(), ExtraHours.created_at.desc())
+    query = query.order_by(ExtraHours.date.desc(), ExtraHours.created_at.desc(), ExtraHours.id.desc())
 
     return query.offset(skip).limit(limit).all()
 
@@ -211,10 +212,11 @@ def get_person_total_hours(
             detail=f"Person with ID {person_id} not found",
         )
 
-    records = db.query(ExtraHours).filter(ExtraHours.person_id == person_id).all()
-
-    total_hours = sum(r.hours for r in records)
-    total_minutes = sum(r.minutes for r in records)
+    total_hours, total_minutes, total_records = db.query(
+        func.coalesce(func.sum(ExtraHours.hours), 0),
+        func.coalesce(func.sum(ExtraHours.minutes), 0),
+        func.count(ExtraHours.id),
+    ).filter(ExtraHours.person_id == person_id).one()
 
     # Normalize minutes into hours
     extra_hours_from_minutes = total_minutes // 60
@@ -229,6 +231,6 @@ def get_person_total_hours(
         "total_hours": total_hours,
         "total_minutes": remaining_minutes,
         "decimal_hours": round(decimal_hours, 2),
-        "total_records": len(records),
+        "total_records": total_records,
     }
 

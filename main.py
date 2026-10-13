@@ -7,7 +7,11 @@ An application for administrators to manage and track extra hours for persons.
 - CRUD operations for extra hours records
 - Every action requires authentication
 """
+from contextlib import asynccontextmanager
+import logging
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
 from database import init_db
@@ -17,18 +21,23 @@ from Routers.extra_hours import router as extra_hours_router
 
 settings = get_settings()
 
-# =============================================================================
-# Application Initialization
-# =============================================================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    logging.getLogger(__name__).info("Database initialized successfully")
+    yield
+
 
 app = FastAPI(
+    lifespan=lifespan,
     title=settings.app_name,
     version=settings.app_version,
     description="""
     API for managing extra hours of persons.
     
     ## Authentication
-    All endpoints except `/api/auth/register` and `/api/auth/login` require authentication.
+    Person and extra-hours endpoints require an access token.
+    Registration, login, refresh, health and API documentation are public.
     Use the **Authorize** button (top-right) to add your Bearer token after logging in.
     
     ## Flow
@@ -44,20 +53,14 @@ app = FastAPI(
     },
 )
 
-
-# =============================================================================
-# Startup Event - Create database tables
-# =============================================================================
-
-@app.on_event("startup")
-def on_startup():
-    """
-    Initialize the database on application startup.
-    Creates all tables defined in Models.models if they don't exist.
-    """
-    init_db()
-    print(f"✅ Database initialized successfully using: {settings.database_url}")
-
+# Allow configured frontend origins to call the API.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # =============================================================================
 # Root Endpoint

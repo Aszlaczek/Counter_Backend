@@ -1,258 +1,222 @@
-"""
-Comprehensive API test script.
-Run: python test_api.py
-"""
+"""Isolated API regression tests: python -m unittest -v (or python test_api.py)."""
+import datetime as dt
 import os
-import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+# Configure an isolated database BEFORE importing the application. Never use .env data.
+_test_directory = tempfile.TemporaryDirectory(prefix="counter-tests-")
+os.environ.update(
+    DATABASE_URL=f"sqlite:///{_test_directory.name}/test.db",
+    JWT_SECRET_KEY="isolated-test-secret-not-for-production-use",
+    DEBUG="false",
+    ALLOW_REGISTRATION="true",
+)
+
 from fastapi.testclient import TestClient
+from jose import jwt
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from database import Base, get_db
 from main import app
-from database import init_db
-
-# Initialize database tables before running tests
-init_db()
-
-client = TestClient(app)
-passed = 0
-failed = 0
+from Models.models import AdminUser, Person, ExtraHours
+from Services.auth_service import settings, hash_password
 
 
-def test(name, condition, detail=""):
-    global passed, failed
-    if condition:
-        passed += 1
-        print(f"  \u2705 {name}")
-    else:
-        failed += 1
-        print(f"  \u274c {name} - {detail}")
+# Own engine and dependency override protect application data even if another
+# test runner imported database.py before this module.
+engine = create_engine(f"sqlite:///{_test_directory.name}/test.db",
+                       connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(bind=engine)
 
 
-# =============================================================================
-# 1. Health Check
-# =============================================================================
-print("\n\U0001f3e5 Health Check")
-r = client.get("/")
-test("Root endpoint", r.status_code == 200)
-test("Response has app name", "Extra Hours Management API" in r.json().get("app", ""))
-test("Status is running", r.json().get("status") == "running")
-
-# =============================================================================
-# 2. Authentication - Register
-# =============================================================================
-print("\n\U0001f510 Authentication")
-
-r = client.post("/api/auth/register", json={
-    "name": "Test",
-    "surname": "Admin",
-    "username": "test_admin",
-    "password": "test123456"
-})
-test("Register admin - status 201", r.status_code == 201)
-test("Register returns admin data", "username" in r.json())
-test("Register returns no password", "password" not in r.json())
-
-# Register duplicate username
-r = client.post("/api/auth/register", json={
-    "name": "Test",
-    "surname": "Admin",
-    "username": "test_admin",
-    "password": "test123456"
-})
-test("Register duplicate username - status 409", r.status_code == 409)
-
-# =============================================================================
-# 3. Authentication - Login
-# =============================================================================
-r = client.post("/api/auth/login", json={
-    "username": "test_admin",
-    "password": "test123456"
-})
-test("Login - status 200", r.status_code == 200)
-test("Login returns access_token", "access_token" in r.json())
-test("Login returns refresh_token", "refresh_token" in r.json())
-test("Login returns token_type bearer", r.json().get("token_type") == "bearer")
-TOKEN = r.json()["access_token"]
-REFRESH_TOKEN = r.json()["refresh_token"]
-test("Access token is not empty", len(TOKEN) > 20)
-test("Refresh token is not empty", len(REFRESH_TOKEN) > 20)
-test("Refresh token differs from access token", REFRESH_TOKEN != TOKEN)
-
-# Login with wrong password
-r = client.post("/api/auth/login", json={
-    "username": "test_admin",
-    "password": "wrong_password"
-})
-test("Login wrong password - status 401", r.status_code == 401)
-
-# =============================================================================
-# 4. Authentication - Refresh Token
-# =============================================================================
-print("\n\U0001f504 Token Refresh")
-
-# Refresh with valid refresh token
-r = client.post("/api/auth/refresh", json={
-    "refresh_token": REFRESH_TOKEN
-})
-test("Refresh token - status 200", r.status_code == 200)
-test("Refresh returns new access_token", "access_token" in r.json())
-test("Refresh returns new refresh_token", "refresh_token" in r.json())
-test("Refresh returns admin data", "admin" in r.json())
-NEW_ACCESS_TOKEN = r.json()["access_token"]
-NEW_REFRESH_TOKEN = r.json()["refresh_token"]
-test("New access token differs from old", NEW_ACCESS_TOKEN != TOKEN)
-test("New refresh token differs from old", NEW_REFRESH_TOKEN != REFRESH_TOKEN)
-
-# Refresh with invalid token string
-r = client.post("/api/auth/refresh", json={
-    "refresh_token": "invalid_token_here"
-})
-test("Refresh invalid token - status 401", r.status_code == 401)
-
-# Refresh with access token (should fail because token type is 'access', not 'refresh')
-r = client.post("/api/auth/refresh", json={
-    "refresh_token": TOKEN  # TOKEN is an access token, not a refresh token
-})
-test("Refresh using access token - status 401", r.status_code == 401)
-
-# Use new tokens for subsequent operations
-TOKEN = NEW_ACCESS_TOKEN
-REFRESH_TOKEN = NEW_REFRESH_TOKEN
-
-# =============================================================================
-# 5. Authentication - Get Me
-# =============================================================================
-r = client.get("/api/auth/me", headers={"Authorization": f"Bearer {TOKEN}"})
-test("Get me - status 200", r.status_code == 200)
-test("Get me returns correct username", r.json().get("username") == "test_admin")
-
-# Get me without token
-r = client.get("/api/auth/me")
-test("Get me no token - status 401", r.status_code == 401)
-
-# Get me with invalid token
-r = client.get("/api/auth/me", headers={"Authorization": "Bearer invalid_token_here"})
-test("Get me invalid token - status 401", r.status_code == 401 or r.status_code == 403)
-
-# =============================================================================
-# 6. Persons - CRUD
-# =============================================================================
-print("\n\U0001f464 Persons CRUD")
-
-# Create person
-r = client.post("/api/persons/", json={
-    "name": "John",
-    "surname": "Doe",
-    "faculty": "Engineering"
-}, headers={"Authorization": f"Bearer {TOKEN}"})
-test("Create person - status 201", r.status_code == 201)
-test("Create person has id", "id" in r.json())
-PERSON_ID = r.json()["id"]
-test("Create person correct name", r.json().get("name") == "John")
-
-# Create person without auth
-r = client.post("/api/persons/", json={
-    "name": "NoAuth",
-    "surname": "User",
-    "faculty": "Test"
-})
-test("Create person no auth - status 401", r.status_code == 401)
-
-# List persons
-r = client.get("/api/persons/", headers={"Authorization": f"Bearer {TOKEN}"})
-test("List persons - status 200", r.status_code == 200)
-test("List persons returns array", isinstance(r.json(), list))
-test("List contains created person", any(p["id"] == PERSON_ID for p in r.json()))
-
-# Get person detail
-r = client.get(f"/api/persons/{PERSON_ID}", headers={"Authorization": f"Bearer {TOKEN}"})
-test("Get person detail - status 200", r.status_code == 200)
-test("Person detail has extra hours summary", "total_extra_hours" in r.json())
-
-# Get non-existent person
-r = client.get("/api/persons/99999", headers={"Authorization": f"Bearer {TOKEN}"})
-test("Get non-existent person - status 404", r.status_code == 404)
-
-# Update person
-r = client.put(f"/api/persons/{PERSON_ID}", json={
-    "faculty": "Computer Science"
-}, headers={"Authorization": f"Bearer {TOKEN}"})
-test("Update person - status 200", r.status_code == 200)
-test("Update person faculty changed", r.json().get("faculty") == "Computer Science")
-
-# =============================================================================
-# 7. Extra Hours - CRUD
-# =============================================================================
-print("\n\u23f0 Extra Hours CRUD")
-
-# Create extra hours
-r = client.post("/api/extra-hours/", json={
-    "person_id": PERSON_ID,
-    "hours": 2,
-    "minutes": 30,
-    "description": "Weekend project work"
-}, headers={"Authorization": f"Bearer {TOKEN}"})
-test("Create extra hours - status 201", r.status_code == 201)
-test("Extra hours has id", "id" in r.json())
-EH_ID = r.json()["id"]
-test("Extra hours correct hours", r.json().get("hours") == 2)
-
-# Create extra hours for non-existent person
-r = client.post("/api/extra-hours/", json={
-    "person_id": 99999,
-    "hours": 1,
-    "minutes": 0
-}, headers={"Authorization": f"Bearer {TOKEN}"})
-test("Create hours invalid person - status 404", r.status_code == 404)
-
-# List extra hours
-r = client.get("/api/extra-hours/", headers={"Authorization": f"Bearer {TOKEN}"})
-test("List extra hours - status 200", r.status_code == 200)
-test("List extra hours is array", isinstance(r.json(), list))
-test("List contains created record", any(eh["id"] == EH_ID for eh in r.json()))
-
-# Get single extra hours record
-r = client.get(f"/api/extra-hours/{EH_ID}", headers={"Authorization": f"Bearer {TOKEN}"})
-test("Get extra hours by id - status 200", r.status_code == 200)
-test("Get extra hours has person_id", r.json().get("person_id") == PERSON_ID)
-
-# Update extra hours
-r = client.put(f"/api/extra-hours/{EH_ID}", json={
-    "hours": 3,
-    "description": "Updated: Weekend project work + overtime"
-}, headers={"Authorization": f"Bearer {TOKEN}"})
-test("Update extra hours - status 200", r.status_code == 200)
-test("Update hours changed", r.json().get("hours") == 3)
-test("Update description changed", "Updated" in r.json().get("description", ""))
-
-# Person hours summary
-r = client.get(f"/api/extra-hours/persons/{PERSON_ID}/summary", headers={"Authorization": f"Bearer {TOKEN}"})
-test("Person hours summary - status 200", r.status_code == 200)
-test("Summary has total_hours", "total_hours" in r.json())
-test("Summary has decimal_hours", "decimal_hours" in r.json())
-
-# Delete extra hours
-r = client.delete(f"/api/extra-hours/{EH_ID}", headers={"Authorization": f"Bearer {TOKEN}"})
-test("Delete extra hours - status 204", r.status_code == 204)
-
-# Verify deleted
-r = client.get(f"/api/extra-hours/{EH_ID}", headers={"Authorization": f"Bearer {TOKEN}"})
-test("Verify extra hours deleted - status 404", r.status_code == 404)
-
-# Delete person (cascades remaining hours)
-r = client.delete(f"/api/persons/{PERSON_ID}", headers={"Authorization": f"Bearer {TOKEN}"})
-test("Delete person - status 204", r.status_code == 204)
-
-# Verify person deleted
-r = client.get(f"/api/persons/{PERSON_ID}", headers={"Authorization": f"Bearer {TOKEN}"})
-test("Verify person deleted - status 404", r.status_code == 404)
+def test_db_session():
+    with SessionLocal() as session:
+        yield session
 
 
-# =============================================================================
-# Summary
-# =============================================================================
-print(f"\n{'='*50}")
-print(f"\U0001f4ca TEST RESULTS: {passed} passed, {failed} failed out of {passed + failed} total")
-if failed == 0:
-    print("\U0001f389 ALL TESTS PASSED!")
-else:
-    print(f"\u26a0\ufe0f  {failed} test(s) FAILED!")
-print(f"{'='*50}")
+class APITests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.password_hash = hash_password("test123456")
+
+    def setUp(self):
+        Base.metadata.drop_all(engine)
+        app.dependency_overrides[get_db] = test_db_session
+        self.addCleanup(app.dependency_overrides.pop, get_db)
+        self.startup_patch = patch("main.init_db", lambda: Base.metadata.create_all(engine))
+        self.startup_patch.start()
+        self.addCleanup(self.startup_patch.stop)
+        self.client = TestClient(app)
+        self.client.__enter__()
+        with SessionLocal() as db:
+            db.add(AdminUser(name="Test", surname="Admin", username="tester",
+                             hashed_password=self.password_hash))
+            db.commit()
+        response = self.client.post("/api/auth/login", json={
+            "username": "tester", "password": "test123456"})
+        self.assertEqual(response.status_code, 200)
+        self.tokens = response.json()
+        self.headers = {"Authorization": f"Bearer {self.tokens['access_token']}"}
+
+    def tearDown(self):
+        self.client.__exit__(None, None, None)
+
+    @classmethod
+    def tearDownClass(cls):
+        engine.dispose()
+
+    def person(self, **fields):
+        response = self.client.post("/api/persons/", headers=self.headers,
+                                    json={"name": "Jan", "surname": "Kowalski", **fields})
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def hours(self, person_id, **fields):
+        response = self.client.post("/api/extra-hours/", headers=self.headers,
+                                    json={"person_id": person_id, **fields})
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def test_health_and_openapi(self):
+        self.assertEqual(self.client.get("/").json()["status"], "running")
+        self.assertEqual(self.client.get("/openapi.json").status_code, 200)
+
+    def test_registration_duplicates_and_password_limits(self):
+        data = {"name": "New", "surname": "Admin", "username": "new-admin",
+                "email": "test@example.com", "password": "ą" * 36}
+        response = self.client.post("/api/auth/register", json=data)
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertNotIn("hashed_password", response.json())
+        self.assertEqual(self.client.post("/api/auth/register", json=data).status_code, 409)
+        data["username"] = "other-admin"
+        self.assertEqual(self.client.post("/api/auth/register", json=data).status_code, 409)
+        data["password"] = "ą" * 37
+        self.assertEqual(self.client.post("/api/auth/register", json=data).status_code, 422)
+        self.assertEqual(self.client.post("/api/auth/login", json={
+            "username": "new-admin", "password": "ą" * 36}).status_code, 200)
+        self.assertEqual(self.client.post("/api/auth/login", json={
+            "username": "new-admin", "password": "ą" * 37}).status_code, 401)
+
+    def test_registration_can_be_disabled(self):
+        with patch.object(settings, "allow_registration", False):
+            response = self.client.post("/api/auth/register", json={
+                "name": "New", "surname": "Admin", "username": "new-admin",
+                "password": "test123456"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_authentication_and_refresh(self):
+        self.assertEqual(self.client.get("/api/auth/me", headers=self.headers).json()["username"], "tester")
+        for path in ("/api/auth/me", "/api/persons/", "/api/extra-hours/"):
+            self.assertEqual(self.client.get(path).status_code, 401)
+            self.assertEqual(self.client.get(path, headers={"Authorization":
+                f"Bearer {self.tokens['refresh_token']}"}).status_code, 401)
+        self.assertEqual(self.client.post("/api/auth/login", json={
+            "username": "tester", "password": "wrong"}).status_code, 401)
+        response = self.client.post("/api/auth/refresh", json={
+            "refresh_token": self.tokens["refresh_token"]})
+        self.assertEqual(response.status_code, 200)
+        for key in ("access_token", "refresh_token"):
+            self.assertNotEqual(response.json()[key], self.tokens[key])
+        self.assertEqual(self.client.post("/api/auth/refresh", json={
+            "refresh_token": self.tokens["access_token"]}).status_code, 401)
+
+    def test_invalid_expired_and_malformed_tokens(self):
+        future = int(dt.datetime.now(dt.timezone.utc).timestamp()) + 3600
+        for token_type in ("access", "refresh"):
+            payloads = [
+                {"sub": "not-a-number", "type": token_type, "exp": future},
+                {"sub": "1", "type": token_type, "exp": 1},
+                {"sub": "1", "type": token_type},
+                {"sub": "0", "type": token_type, "exp": future},
+                {"type": token_type, "exp": future},
+            ]
+            tokens = ["invalid-token"] + [jwt.encode(p, settings.jwt_secret_key,
+                algorithm=settings.jwt_algorithm) for p in payloads]
+            for token in tokens:
+                with self.subTest(token_type=token_type, token=token):
+                    if token_type == "access":
+                        response = self.client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+                    else:
+                        response = self.client.post("/api/auth/refresh", json={"refresh_token": token})
+                    self.assertEqual(response.status_code, 401, response.text)
+
+    def test_inactive_account(self):
+        with SessionLocal() as db:
+            db.query(AdminUser).filter_by(username="tester").update({"is_active": False})
+            db.commit()
+        self.assertEqual(self.client.get("/api/auth/me", headers=self.headers).status_code, 403)
+        self.assertEqual(self.client.post("/api/auth/refresh", json={
+            "refresh_token": self.tokens["refresh_token"]}).status_code, 403)
+
+    def test_crud_summaries_and_cascade(self):
+        person = self.person()
+        person_id = person["id"]
+        summary_path = f"/api/extra-hours/persons/{person_id}/summary"
+        self.assertEqual(self.client.get(summary_path, headers=self.headers).json()["total_records"], 0)
+        record = self.hours(person_id, hours=2, minutes=45, description="Overtime", date="2026-10-12")
+        self.hours(person_id, hours=1, minutes=45)
+        summary = self.client.get(summary_path, headers=self.headers).json()
+        self.assertEqual((summary["total_hours"], summary["total_minutes"], summary["decimal_hours"],
+                          summary["total_records"]), (4, 30, 4.5, 2))
+        detail = self.client.get(f"/api/persons/{person_id}", headers=self.headers).json()
+        self.assertEqual((detail["total_extra_hours"], detail["extra_hours_count"]), (4.5, 2))
+        response = self.client.put(f"/api/persons/{person_id}", headers=self.headers, json={"faculty": "IT"})
+        self.assertEqual(response.json()["faculty"], "IT")
+        path = f"/api/extra-hours/{record['id']}"
+        response = self.client.put(path, headers=self.headers, json={"hours": 3, "description": None})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["hours"], 3)
+        self.assertIsNone(response.json()["description"])
+        self.assertEqual(self.client.delete(path, headers=self.headers).status_code, 204)
+        self.assertEqual(self.client.get(path, headers=self.headers).status_code, 404)
+        self.assertEqual(self.client.delete(f"/api/persons/{person_id}", headers=self.headers).status_code, 204)
+        self.assertEqual(self.client.get(summary_path, headers=self.headers).status_code, 404)
+        with SessionLocal() as db:
+            self.assertEqual(db.query(ExtraHours).count(), 0)
+
+    def test_validation_and_missing_records(self):
+        person = self.person()
+        record = self.hours(person["id"])
+        for field in ("name", "surname", "faculty", "is_working"):
+            self.assertEqual(self.client.put(f"/api/persons/{person['id']}", headers=self.headers,
+                                            json={field: None}).status_code, 422)
+        for fields in ({"hours": None}, {"minutes": None}, {"date": None},
+                       {"minutes": 60}, {"hours": -1}, {"date": "2026-02-30"}):
+            self.assertEqual(self.client.put(f"/api/extra-hours/{record['id']}", headers=self.headers,
+                                            json=fields).status_code, 422)
+        self.assertEqual(self.client.post("/api/extra-hours/", headers=self.headers,
+            json={"person_id": 99999}).status_code, 404)
+        self.assertEqual(self.client.get("/api/persons/99999", headers=self.headers).status_code, 404)
+
+    def test_pagination_and_filters(self):
+        first = self.person(is_working=False)
+        second = self.person()
+        self.assertEqual(self.client.get("/api/persons/?is_working=false", headers=self.headers).json()[0]["id"], first["id"])
+        self.assertEqual(self.client.get("/api/persons/?skip=1&limit=1", headers=self.headers).json()[0]["id"], second["id"])
+        self.hours(first["id"])
+        self.hours(second["id"])
+        records = self.client.get(f"/api/extra-hours/?person_id={first['id']}", headers=self.headers).json()
+        self.assertEqual([r["person_id"] for r in records], [first["id"]])
+        for query in ("skip=-1", "limit=0", "limit=501"):
+            self.assertEqual(self.client.get(f"/api/persons/?{query}", headers=self.headers).status_code, 422)
+
+    def test_timestamps_are_evaluated_at_write(self):
+        first = self.person()
+        second = self.person()
+        self.assertGreater(second["created_at"], first["created_at"])
+        response = self.client.put(f"/api/persons/{first['id']}", headers=self.headers, json={"name": "Changed"})
+        self.assertGreater(response.json()["updated_at"], first["updated_at"])
+        self.assertEqual(response.json()["created_at"], first["created_at"])
+
+    def test_cors_preflight(self):
+        response = self.client.options("/api/persons/", headers={
+            "Origin": "http://localhost:5173", "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["access-control-allow-origin"], "http://localhost:5173")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

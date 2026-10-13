@@ -7,7 +7,7 @@ Tables:
 - ExtraHours: Records of extra hours worked by persons
 """
 import datetime as dt
-from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -27,8 +27,8 @@ class AdminUser(Base):
     email = Column(String(255), unique=True, nullable=True)
     hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=dt.datetime.now(dt.timezone.utc))
-    updated_at = Column(DateTime, default=dt.datetime.now(dt.timezone.utc), onupdate=dt.datetime.now(dt.timezone.utc))
+    created_at = Column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
+    updated_at = Column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc), onupdate=lambda: dt.datetime.now(dt.timezone.utc))
 
     # Relationships
     created_persons = relationship("Person", back_populates="creator", foreign_keys="Person.created_by_id")
@@ -50,8 +50,8 @@ class Person(Base):
     faculty = Column(String(200), default="Unknown")
     is_working = Column(Boolean, default=True)
     created_by_id = Column(Integer, ForeignKey("admin_users.id"), nullable=False)
-    created_at = Column(DateTime, default=dt.datetime.now(dt.timezone.utc))
-    updated_at = Column(DateTime, default=dt.datetime.now(dt.timezone.utc), onupdate=dt.datetime.now(dt.timezone.utc))
+    created_at = Column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
+    updated_at = Column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc), onupdate=lambda: dt.datetime.now(dt.timezone.utc))
     edited_by_id = Column(Integer, ForeignKey("admin_users.id"), nullable=True)
 
     # Relationships
@@ -75,10 +75,10 @@ class ExtraHours(Base):
     minutes = Column(Integer, default=0)  # Extra minutes (0-59)
     hours = Column(Integer, default=0)    # Extra hours
     description = Column(Text, nullable=True)  # Optional reason for extra hours
-    date = Column(DateTime, default=dt.datetime.now(dt.timezone.utc).date())  # Date when hours were worked
+    date = Column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc).date())  # Date when hours were worked
     created_by_id = Column(Integer, ForeignKey("admin_users.id"), nullable=False)
-    created_at = Column(DateTime, default=dt.datetime.now(dt.timezone.utc))
-    updated_at = Column(DateTime, default=dt.datetime.now(dt.timezone.utc), onupdate=dt.datetime.now(dt.timezone.utc))
+    created_at = Column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
+    updated_at = Column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc), onupdate=lambda: dt.datetime.now(dt.timezone.utc))
     edited_by_id = Column(Integer, ForeignKey("admin_users.id"), nullable=True)
 
     # Relationships

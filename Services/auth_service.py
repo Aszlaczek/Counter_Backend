@@ -12,7 +12,8 @@ from typing import Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
-from passlib.context import CryptContext
+import bcrypt
+from sqlalchemy.exc import IntegrityError
 from jose import jwt
 
 from config import get_settings
@@ -21,33 +22,22 @@ from Models.schemas import AdminUserCreate, AdminUserResponse
 
 settings = get_settings()
 
-# Password hashing context using bcrypt
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-# =============================================================================
-# Password Helpers
-# =============================================================================
-
 def hash_password(password: str) -> str:
-    """
-    Hash a plain-text password using bcrypt.
-
-    Note: bcrypt has a 72-byte limit. Passwords longer than 72 bytes are
-    automatically truncated to 72 bytes to avoid ValueError.
-    """
-    password_bytes = password.encode("utf-8")[:72]
-    password = password_bytes.decode("utf-8", errors="ignore")
-    return pwd_context.hash(password)
+    """Hash a password without silently truncating UTF-8 bytes."""
+    password_bytes = password.encode("utf-8")
+    if len(password_bytes) > 72:
+        raise ValueError("Password must not exceed 72 UTF-8 bytes")
+    return bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode("ascii")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    Verify a plain-text password against a bcrypt hash.
-    """
-    password_bytes = plain_password.encode("utf-8")[:72]
-    plain_password = password_bytes.decode("utf-8", errors="ignore")
-    return pwd_context.verify(plain_password, hashed_password)
+    password_bytes = plain_password.encode("utf-8")
+    if len(password_bytes) > 72:
+        return False
+    try:
+        return bcrypt.checkpw(password_bytes, hashed_password.encode("ascii"))
+    except (ValueError, UnicodeError):
+        return False
 
 
 # =============================================================================
@@ -100,6 +90,7 @@ def verify_refresh_token(refresh_token: str) -> int:
             refresh_token,
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm],
+            options={"require_exp": True, "require_sub": True},
         )
 
         if payload.get("type") != "refresh":
@@ -115,14 +106,17 @@ def verify_refresh_token(refresh_token: str) -> int:
                 detail="Invalid refresh token: no subject found",
             )
 
-        return int(admin_id_str)
+        admin_id = int(admin_id_str)
+        if admin_id <= 0:
+            raise ValueError("Invalid subject")
+        return admin_id
 
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token has expired. Please login again.",
         )
-    except jwt.JWTError:
+    except (jwt.JWTError, ValueError, TypeError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token. Please login again.",
@@ -143,6 +137,9 @@ def register_admin(db: Session, admin_data: AdminUserCreate) -> AdminUser:
     """
     Register a new admin user.
     """
+    if not settings.allow_registration:
+        raise HTTPException(status_code=403, detail="Admin registration is disabled")
+
     existing_username = db.query(AdminUser).filter(
         AdminUser.username == admin_data.username
     ).first()
@@ -172,7 +169,13 @@ def register_admin(db: Session, admin_data: AdminUserCreate) -> AdminUser:
     )
 
     db.add(new_admin)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409, detail="Username or email is already registered"
+        ) from exc
     db.refresh(new_admin)
 
     return new_admin

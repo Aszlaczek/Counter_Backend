@@ -3,7 +3,7 @@ Pydantic schemas for request validation and response serialization.
 """
 import datetime as dt
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 # =============================================================================
@@ -23,6 +23,13 @@ class AdminUserCreate(BaseModel):
         description="Password (6-72 characters — bcrypt has a 72-byte limit)",
     )
 
+    @field_validator("password")
+    @classmethod
+    def validate_password_bytes(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must not exceed 72 UTF-8 bytes")
+        return value
+
 
 class AdminUserLogin(BaseModel):
     """Schema for admin login."""
@@ -40,8 +47,7 @@ class AdminUserResponse(BaseModel):
     is_active: bool
     created_at: dt.datetime
 
-    class Config:
-        from_attributes = True  # Enables ORM mode for SQLAlchemy
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TokenResponse(BaseModel):
@@ -82,6 +88,13 @@ class PersonUpdate(BaseModel):
     faculty: Optional[str] = Field(None, max_length=200)
     is_working: Optional[bool] = None
 
+    @field_validator("name", "surname", "faculty", "is_working")
+    @classmethod
+    def reject_null(cls, value):
+        if value is None:
+            raise ValueError("Omit this field instead of sending null")
+        return value
+
 
 class PersonResponse(BaseModel):
     """Schema for returning person data."""
@@ -94,8 +107,7 @@ class PersonResponse(BaseModel):
     created_at: dt.datetime
     updated_at: dt.datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PersonDetailResponse(PersonResponse):
@@ -134,6 +146,13 @@ class ExtraHoursUpdate(BaseModel):
     description: Optional[str] = Field(None, max_length=500)
     date: Optional[str] = Field(None, description="Date (YYYY-MM-DD)")
 
+    @field_validator("hours", "minutes", "date")
+    @classmethod
+    def reject_null(cls, value):
+        if value is None:
+            raise ValueError("Omit this field instead of sending null")
+        return value
+
     @field_validator("date")
     @classmethod
     def validate_date(cls, v: Optional[str]) -> Optional[str]:
@@ -158,5 +177,4 @@ class ExtraHoursResponse(BaseModel):
     updated_at: dt.datetime
     edited_by_id: Optional[int] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

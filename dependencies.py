@@ -52,6 +52,7 @@ def get_current_admin(
             token,
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm],
+            options={"require_exp": True, "require_sub": True},
         )
         # python-jose encodes 'sub' as a string, convert to int for DB lookup
         admin_id_str: str = payload.get("sub")
@@ -62,12 +63,17 @@ def get_current_admin(
                 detail="Invalid token: no subject found",
             )
 
+        if payload.get("type") != "access":
+            raise ValueError("An access token is required")
         admin_id = int(admin_id_str)
+        if admin_id <= 0:
+            raise ValueError("Invalid subject")
 
-    except JWTError:
+    except (JWTError, ValueError, TypeError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token. Please login again.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     # Fetch admin from database
